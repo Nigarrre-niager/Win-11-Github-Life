@@ -1,0 +1,156 @@
+name: RDP Premium - DucThengGaming 🚀
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Chọn thời gian RDP (6h, 5h, 4h, 3h, 2h, 1h, 59p, 40p, 30p, 20p, 10p, 5p)"
+        default: "6h"
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 3600
+
+    steps:
+      - name: Configure Core RDP Settings
+        run: |
+          # Mở RDP và tắt NLA
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+
+          # Firewall
+          netsh advfirewall firewall delete rule name="RDP-Tailscale" -ErrorAction SilentlyContinue
+          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
+          Restart-Service -Name TermService -Force
+
+      - name: Create Premium User DucThengGaming
+        run: |
+          Add-Type -AssemblyName System.Security
+          $charSet = @{
+              Upper   = [char[]](65..90)
+              Lower   = [char[]](97..122)
+              Number  = [char[]](48..57)
+              Special = ([char[]](33..47) + [char[]](58..64) + [char[]](91..96) + [char[]](123..126))
+          }
+          $rawPassword = @()
+          $rawPassword += $charSet.Upper | Get-Random -Count 4
+          $rawPassword += $charSet.Lower | Get-Random -Count 4
+          $rawPassword += $charSet.Number | Get-Random -Count 4
+          $rawPassword += $charSet.Special | Get-Random -Count 4
+          $password = -join ($rawPassword | Sort-Object { Get-Random })
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+
+          if (-not (Get-LocalUser -Name "DucThengGaming" -ErrorAction SilentlyContinue)) {
+              New-LocalUser -Name "DucThengGaming" -Password $securePass -AccountNeverExpires
+              Add-LocalGroupMember -Group "Administrators" -Member "DucThengGaming"
+              Add-LocalGroupMember -Group "Remote Desktop Users" -Member "DucThengGaming"
+          }
+
+          echo "RDP_PREMIUM_CREDS=User: DucThengGaming | Password: $password" >> $env:GITHUB_ENV
+
+      - name: Install Tailscale
+        run: |
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          Remove-Item $installerPath -Force
+
+      - name: Establish Tailscale Connection
+        run: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=DucThengGaming-$env:GITHUB_RUN_ID --accept-routes=false
+          
+          $tsIP = $null
+          $retry = 0
+          while (-not $tsIP -and $retry -lt 10) {
+              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+              Start-Sleep -Seconds 3
+              $retry++
+          }
+          if (-not $tsIP) { Write-Error "Không lấy được IP Tailscale"; exit 1 }
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+
+      - name: Optimize RDP for Video/Audio
+        run: |
+          # Tắt hiệu ứng Windows
+          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name 'VisualFXSetting' -Value 2 -Force
+          Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'FontSmoothing' -Value 0
+          Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'UserPreferencesMask' -Value ([byte[]](0x90,0x12,0x03,0x80)) -Type Binary
+
+          # Remote Desktop chất lượng trung bình
+          Set-ItemProperty -Path 'HKLM:\Software\Microsoft\Terminal Server Client' -Name 'RemoteDesktopQuality' -Value 2 -Force
+
+          # Âm thanh mượt hơn
+          reg add "HKCU\Software\Microsoft\Terminal Server Client" /v AudioQualityMode /t REG_DWORD /d 1 /f
+
+          Write-Host "✅ RDP tối ưu cho video và âm thanh mượt"
+
+      - name: Show Intro & Premium Info
+        run: |
+          $ip = $env:TAILSCALE_IP
+          $creds = $env:RDP_PREMIUM_CREDS
+
+          Clear-Host
+          Write-Host "██████╗ ██████╗ ████████╗██╗███╗   ██╗██╗███╗   ██╗" -ForegroundColor Cyan
+          Write-Host "██╔══██╗██╔══██╗╚══██╔══╝██║████╗  ██║██║████╗  ██║" -ForegroundColor Cyan
+          Write-Host "██████╔╝██████╔╝   ██║   ██║██╔██╗ ██║██║██╔██╗ ██║" -ForegroundColor Cyan
+          Write-Host "██╔═══╝ ██╔═══╝    ██║   ██║██║╚██╗██║██║██║╚██╗██║" -ForegroundColor Cyan
+          Write-Host "██║     ██║        ██║   ██║██║ ╚████║██║██║ ╚████║" -ForegroundColor Cyan
+          Write-Host "╚═╝     ╚═╝        ╚═╝   ╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝" -ForegroundColor Cyan
+          Write-Host "           🚀 DUC THENG GAMING – PREMIUM SIÊU TO 🚀" -ForegroundColor Yellow
+          Write-Host ""
+          Write-Host "╔══════════════════════════════════════╗"
+          Write-Host "║           🔥 PREMIUM INFO 🔥          ║"
+          Write-Host "╠══════════════════════════════════════╣"
+          Write-Host "║ Tailscale IP: $ip"
+          Write-Host "║ $creds"
+          Write-Host "╚══════════════════════════════════════╝"
+          Write-Host ""
+
+      - name: System Cleanup (Dọn Rác)
+        run: |
+          Write-Host "🧹 Đang dọn rác hệ thống..." -ForegroundColor Yellow
+          $paths = @("$env:TEMP\*", "C:\Windows\Temp\*", "$env:LocalAppData\Temp\*", "C:\Windows\Prefetch\*", "C:\Windows\SoftwareDistribution\Download\*", "C:\Windows\Logs\*")
+          $start = Get-Date
+          foreach ($p in $paths) {
+              if (Test-Path $p) {
+                  Get-ChildItem $p -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                      Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                      Start-Sleep -Milliseconds 10
+                  }
+              }
+          }
+          $end = Get-Date
+          Write-Host "✅ Hoàn tất dọn rác! Thời gian: $([math]::Round(($end - $start).TotalSeconds,2)) giây" -ForegroundColor Green
+
+      - name: Maintain RDP Session with Timer
+        run: |
+          $options = @{
+              "6h" = 6*3600; "5h" = 5*3600; "4h" = 4*3600; "3h" = 3*3600
+              "2h" = 2*3600; "1h" = 1*3600
+              "59p" = 59*60; "40p" = 40*60; "30p" = 30*60; "20p" = 20*60
+              "10p" = 10*60; "5p" = 5*60
+          }
+
+          $inputTime = "${{ github.event.inputs.duration }}"
+          if ($options.ContainsKey($inputTime)) {
+              $totalSeconds = $options[$inputTime]
+          } else {
+              Write-Host "Giá trị không hợp lệ. Sử dụng mặc định 6h"
+              $totalSeconds = 6*3600
+          }
+
+          Write-Host "⏳ RDP sẽ chạy trong $inputTime ($totalSeconds giây)."
+
+          while ($totalSeconds -gt 0) {
+              $hoursLeft = [math]::Floor($totalSeconds / 3600)
+              $minutesLeft = [math]::Floor(($totalSeconds % 3600) / 60)
+              $secondsLeft = $totalSeconds % 60
+              Write-Host "[PREMIUM] RDP Active - IP: $env:TAILSCALE_IP | User: DucThengGaming | Thời gian còn lại: $hoursLeft giờ $minutesLeft phút $secondsLeft giây" -ForegroundColor Cyan
+              Start-Sleep -Seconds 10
+              $totalSeconds -= 10
+          }
+
+          Write-Host "⏰ Thời gian RDP đã kết thúc!"
